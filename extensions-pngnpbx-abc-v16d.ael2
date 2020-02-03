@@ -63,8 +63,8 @@ DTMF WARNING
 ============
 
 DTMF pass through is currently not tested well. DTMF is restricted to menu
-options. However, should the need arise to navigate an IVR, you can press 1 then
-the number and the single digit will be transmitted: 11 to send 1, 12 -> 2, etc.
+options. (TODO: should the need arise to navigate an IVR, you can press 1 then
+the number and the single digit will be transmitted: 11 to send 1, 12 -> 2, etc.)
 
 
 LOGGING
