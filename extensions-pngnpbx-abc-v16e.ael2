@@ -1,0 +1,1488 @@
+/****************************************************************************
+ *                                                                          *
+ *                      Always Be Conferencing (ABC)                        *
+ *                                                                          *
+ *              Creator: chris @ Penguin PBX Solutions                      *
+ *              Version: 16e "Elevation Gain Edition"                       *
+ *              Release: 2020-02-04                                         *
+ *              License: Creative Commons Zero v1.0 Universal (CC0 1.0)     *
+ *                                                                          *
+ ****************************************************************************/
+
+/*
+
+Howdy
+=====
+
+ABC starts your Conference Bridge in ASTERISK(R) by Originating calls to up
+to twenty other participants, after you dial just one (configurable) number.
+
+Your friends' phones will immediately be notified of your call attempt.
+The caller ID information they see on their SIP phones will show them your name,
+number, GPS co-ordinates (if configured), and the remote end destination number
+you originally dialed (the DNID).
+
+When your friends answer the phone, they will hear some short notes (A-B-C),
+and then be able to talk with you -- even before the remote end answers!
+
+In Simple Mode, the conference will continue until all parties disconnect
+-- even if the original caller (you) hang up the phone before anybody answers!
+
+ABC is tested most with PJSIP on ASTERISK certified version 16.3-cert1.
+It should also work with any channel technology (see DAHDI in Example #2.)
+Non-numeric extension numbers should work, but you should test it yourself.
+Really, you should test and verify everything in ABC that you intend to use!
+
+
+
+FEATURES
+========
+
+~ Instant (Simple Mode) or delayed (Tin Can Mode) bridging for caller.
+~ Dynamic temporary pool call back number <-> caller ID mapping and routing.
+~ DIY phone-based geolocation update support for changing GPS info via IVR.
+~ Single press DTMF options to play back dispatachable location in-band.
+~ Optional automated playback of GPS co-ordinates to remote end upon answer.
+~ Preliminary support for RFC6442 Geolocation headers with some SIP providers.
+~ Saves first thirty seconds of call as voicemail (to email) (if configured.)
+~ Optional full call recording of each participant leg of the conference.
+~ Easy integration with existing ASTERISK and FreePBX(R) installations.
+
+
+
+Quick Start mini-HOWTO for first time ABC users on FreePBX
+==========================================================
+
+1. First, SSH into your PBX, and then run the following commands:
+
+    mkdir ~/abc
+    cd ~/abc
+    wget https://raw.githubusercontent.com/chrsmj/always-be-conferencing/master/extensions-pngnpbx-abc-v16e.ael2
+    echo '#include "extensions-pngnpbx-abc-v16e.ael2"' > extensions.ael
+    echo '[from-internal-custom]' > extensions_custom.conf
+    echo 'exten => _123*222,1,Goto(pngnpbx-abc-demo,${EXTEN},1)' >> extensions_custom.conf
+    echo 'exten => _123*222X*.,1,Goto(pngnpbx-abc-demo,${EXTEN},1)' >> extensions_custom.conf
+
+2. Now you are about to copy the files into the Asterisk configuration directory.
+   You will probably need to be root or use sudo access to complete this next step:
+
+    sudo cp -i ~/abc/extensions* /etc/asterisk/
+
+   If there are any errors on the copying, then you should manually inspect
+   the files for conflicts. Most likely, the only conflict will be with the
+   extensions_custom.conf files. Run this command to check your existing file:
+
+    cat /etc/asterisk/extensions_custom.conf
+
+   If it is empty, then you can try the copy again, and just clobber the old file:
+
+    sudo cp ~/abc/extensions_custom.conf /etc/asterisk/
+
+   If the existing file is not empty, then you will need to manually insert the
+   ABC "_123*222..." config lines into the existing [from-internal-custom] context
+   (or create the context if it does not already exist.)
+
+3. After completing the file copying, exit SSH and open up your PBX GUI.
+   Issue a full PBX reload using your GUI (sometimes you have to make a small
+   change to get the "Apply Changes" button to appear, so make a trivial thing like
+   adding ABC after your name, then "Submit", then "Apply Changes".)
+
+4. Finally, start making test calls from your desk phone, with massive dial strings:
+   
+    123*2224*1000*2000*3000
+
+   ...replacing 1000 with an extension acting as your "remote end" operator
+   and replacing 2000 and 3000 with your own local "friend" extensions.
+
+   To hear your GPS co-ordinates, any participant can press * at any time
+   during the call. To stop the bot playback, press #.
+
+   To silence the ring-back you hear from friend's phones, but not the remote end,
+   you can run the following command on the Asterisk CLI: 
+
+    localhost*CLI> indication add us silent 0/15000
+
+
+Note this mini-HOWTO assumes all phones are using the same channel technology
+(preferably chan_PJSIP but legacy chan_SIP should also work, and maybe others.)
+
+
+
+PREREQ: The ASTERISK Extension Language (AEL)
+=============================================
+
+ABC is configured in the ASTERISK Extension Language. AEL syntax is
+converted into standard CONF file format when loaded in to system memory
+by Asterisk. But you should not need to edit this ABC AEL file very often,
+if ever. It only needs to be included into your dialplan.
+
+Please copy this file into your "/etc/asterisk/" directory and set it to
+read-only permission for the user/group your Asterisk process runs as (usually
+"root" or "asterisk".)
+
+To confirm you have AEL working in your version of Asterisk, you can run this
+command on the Asterisk CLI:
+
+    localhost*CLI> core show help ael
+
+...which, if loaded properly, should list "ael reload" and "ael set debug".
+
+Otherwise, if this is your first time using AEL, then you may need to manually
+load the module, or take other steps. This may include rebuilding from source
+code eg. selecting the AEL module when using "make menuconfig".
+
+After confirming AEL is active and working, edit (or create) this file:
+
+    /etc/asterisk/extensions.ael
+
+And add this line (with no spaces at the front):
+
+    #include "extensions-pngnpbx-abc-v16e.ael2"
+
+...then save the file. Now you should be able to load the AEL config and view
+the in-memory dial plan in CONF format:
+
+    localhost*CLI> ael reload
+    localhost*CLI> dialplan show pngnpbx-abc-dial
+
+If that works, and you see a bunch of dial plan looking output, Congratulations!
+You are now able to use ABC from standard dial plan in "extensions.conf" file
+-- or in the "extensions_custom.conf" file if you are using FreePBX.
+
+
+
+Tin Can Mode
+============
+
+If you choose this mode, then ABC will use Dial() instead of Originate() at the
+start of the call to the remote end. This is to help satisfy requirements in
+some situations where it is deemed desirable to only route the call and not
+answer the caller via immediate bridging.  This works by adding a ChanSpy() on
+the caller, so that friends who answer can talk to the caller, and other
+friends, even *before* the remote end answers the phone.
+
+
+
+Tin Can Mode WARNING
+====================
+
+There are several potential shortcomings in Tin Can mode compared to Simple
+Mode, including the following caveats:
+
+ 1. In Simple Mode, everyone always gets access to DTMF menu options, because
+    they are always in the conference.
+
+ 2. In Tin Can Mode, callers will not get access to DTMF menu options until
+    the remote end answers. Then, everyone will get the access, same as Simple
+    Mode. However, at any time, callers can ask friends on the bridge to press
+    options like splat YOU ARE HERE -- even before the remote end answers.
+
+ 3. In Tin Can Mode, there may be a few more frames of feedback immediately
+    after the remote end answers. (TODO: Fix this in a future release.)
+
+ 4. In Tin Can Mode ONLY, when caller hangs up before remote end answers, then
+    the call will drop. (TODO: Fix this in a future release.)
+
+
+
+DTMF WARNING
+============
+
+DTMF pass through is currently not tested well. DTMF is restricted to menu
+options. (TODO: should the need arise to navigate a remote IVR, you can press 1 then
+the number and the single digit will be transmitted: 11 to send 1, 12 -> 2, etc.)
+
+
+
+PRIVACY WARNING
+===============
+
+The storing of exact GPS co-ordinates of each phone presents multiple safety, security,
+and privacy concerns. ABC attempts to solve some of these by only persisting GPS info
+in encrypted formats inside the internal Asterisk DB. This prevents bulk dumping of data
+via Asterisk CLI commands like "database show" but by default the key is located on the
+filesystem in the /var/lib/asterisk/keys/ directory.
+
+When you automate backup processes, then you may want to consider changing these slightly,
+for example, to not include the AstDB in /var/lib/asterisk/ and the /var/lib/asterisk/keys/
+directory in the same tarball.
+
+Or, you might consider changing the location of the default key file used for GPS data
+encryption (TODO: make this easier in a future ABC revision.)
+
+However, should you lose the key file, then users will need to manually re-update their
+GPS co-ordinates, using the included IVR. Until they do, the PBX will not know where they are,
+and it will fail when trying to do things like send those co-ordinates to the remote end.
+
+Steps to (re)create the key file:
+
+    sudo mkdir /var/lib/asterisk/keys
+    sudo touch /var/lib/asterisk/keys/pngnpbx-abc-key.txt
+    sudo chown asterisk.asterisk /var/lib/asterisk/keys/pngnpbx-abc-key.txt
+
+Feel free to store 16 random alpha-numeric characters in that file,
+otherwise, a somewhat random hexadecimal string will be used.
+
+
+
+LOGGING
+=======
+
+Call Detail Records will be saved in files based on whatever ABC type name
+you specify ie. the account code will be set to this name on (almost) all channels.
+In the examples (below) it would be "abctest.csv" in the same directory
+as your "Master.csv" (assuming you are using CSV for CDRs.)
+
+Optionally you can record the call (see example #2 below).
+Look for the recordings in "/var/spool/asterisk/monitor/" directory.
+The ABC type name will be used to prefix the files (one file per leg.)
+CAREFUL when recording eg. legal issues, drive space, privacy, etc.
+
+
+
+EXAMPLES
+========
+
+YOU MUST CHANGE #YOUR-TRUNK-s#, the "ABCTO" number, the extension numbers, and
+choose valid Call-Back numbers, whenever copy-pasta'ing these examples !!!
+
+But please feel free to copy the next 200 lines directly into your testing dial plan...
+
+;
+; Example #1: Simple Mode
+; -----------------------
+; * PJSIP channel driver.
+; * One remote end.
+; * One friend to bridge in.
+; * One static call back number.
+; * Remapping of 922 -> 933 for testing SIP provider address verification.
+
+[from-internal-custom-abc-example-1]
+
+exten => 922,1,NoOp()                                               ; Choose your own extension numbers.
+exten => 922,n,NoOp(placeholder)                                    ; TBD
+exten => 922,n,Log(VERBOSE,Always Be Conferencing - PenguinPBX.com) ; Please copy and change as you wish!
+exten => 922,n,Set(ABCTO=933)                                       ; CHANGE ME! Remapping of the dial to another number (if any.)
+exten => 922,n,Set(path=PJSIP/${ABCTO}@#YOUR-TRUNK#)                ; CHANGE ME! Endpoint section defined in your PJSIP configuration.
+exten => 922,n,Set(callback=3035557729)                             ; CHANGE ME! Your call-back telephone number (probably 10 digits in the USA.)
+exten => 922,n,Set(friend=PJSIP/1113)                               ; CHANGE ME! The local PJSIP endpoint to bridge into the call.
+exten => 922,n,Set(abctypename=abctest)                             ; CHANGE ME! Use abctest as the conf type name.
+exten => 922,n,Set(ringtime=120)                                    ; MAYBE CHANGE ME! Rings remote end / path for 2 minutes.
+exten => 922,n,AELSub(pngnpbx-abc-simple,${abctypename})            ; Simple setup. (Either "abc-simple", "abc-init" or "abc-tincan" must be first.)
+exten => 922,n,AELSub(pngnpbx-abc-path,1,${ringtime},${path})       ; Set the first (and only) call path to use on call to remote end.
+exten => 922,n,AELSub(pngnpbx-abc-remote,${callback},static)        ; Originate out the path/trunk using your call-back number as the Caller ID number.
+exten => 922,n,AELSub(pngnpbx-abc-friend,1,${friend})               ; Bridge in the other attendee automatically.
+exten => 922,n,AELSub(pngnpbx-abc-howdy-yall)                       ; Enter the conference. No more dial plan processing occurs for caller in your CONF file.
+
+;
+; Example #2: Using members of Super Awesome Company
+; --------------------------------------------------
+; * Adds multiple remote paths.
+; * Adds call recording.
+; * Adds geolocation.
+; * Adds additional friend phones.
+; * Adds all 15 extension numbers 1101-1115 from basic-pbx sample
+;   pjsip.conf file as found in Asterisk certified version 16.3-cert1
+;   from Dec 2019.
+
+[from-internal-custom-abc-example-2]
+
+exten = 922,1,NoOp()
+ same = n,NoOp(placeholder)
+ same = n,Log(VERBOSE,Always Be Conferencing - PenguinPBX.com)              ; Please copy and change as you wish!
+ same = n,Set(ABCTO=933)                                                    ; CHANGE ME! Remapping of the dial to another number (if any.)
+ same = n,Set(gpsurl=https://abc.penguinpbx.com/loc/)                       ; CHANGE ME! URL that will be included in Geolocation SIP header.
+ same = n,Set(path1=DAHDI/#YOUR-TRUNK-1#/${ABCTO})                          ; CHANGE ME! Endpoint section defined in your DAHDI(R) configuration.
+ same = n,Set(path2=PJSIP/${ABCTO}@#YOUR-TRUNK-2#)                          ; CHANGE ME! A PJSIP endpoint section - used if first path is down/unreachable.
+ same = n,Set(path3=PJSIP/${ABCTO}@#YOUR-TRUNK-3#)                          ; CHANGE ME! Yet another endpoint section defined in your PJSIP configuration.
+ same = n,AELSub(pngnpbx-abc-init,abctest,record,3600,,announce,)           ; Use abctest as the conf type name, save WAVs, limit to 1 hour, and announce GPS.
+ same = n,AELSub(pngnpbx-abc-path,1,10,${path1})                            ; Set the first call path / trunk name to use on call to remote end. Ring 10 seconds.
+ same = n,AELSub(pngnpbx-abc-path,2,60,${path2})                            ; Set the second call path - used only on failover of first call path. Ring 1 minute.
+ same = n,AELSub(pngnpbx-abc-path,3,300,${path3})                           ; Set the third call path - used only on failover of second call path. Ring 5 minutes.
+ same = n,NoOp(About to change flow based on caller ID number.)
+ same = n,Set(cleancid=${FILTER(a-zA-Z0-9,${CALLERID(num)})})
+ same = n,Set(gotdp=${DIALPLAN_EXISTS(${CONTEXT},${EXTEN},x${cleancid})})   
+ same = n,GotoIf($[${gotdp}]?x${cleancid})
+
+; C-Level
+; These two phones are in the same 10m square open area.
+ same = n(x1107),NoOp()                                                     
+ same = n(x1111),NoOp()                                                     
+ same = n,AELSub(pngnpbx-abc-gps,39.739,-104.990,5280ft,${gpsurl})          ; Set Geolocation SIP header to URL and GPS co-ordinates #1.
+ same = n,AELSub(pngnpbx-abc-sa,144 W Colfax Ave,Denver,CO,80202)           ; Street Address, city name, state abbreviation, zip code
+ same = n,AELSub(pngnpbx-abc-ai,W side of Park)                             ; Additional Information. SA + AI = Dispatchable Location
+ same = n,AELSub(pngnpbx-abc-remote,3035557729,static)                      ; Originate out the trunk(s).
+ same = n,Goto(friends)
+
+; Customer Experience - Picnic Shelter 4
+; These four other phones are in another 10m square open area.
+; With Different Additional Information. SA + AI = Dispatchable Location
+ same = n(x1101),NoOp()
+ same = n(x1102),NoOp()
+ same = n(x1115),NoOp()
+ same = n,AELSub(pngnpbx-abc-gps,39.739,-104.990,5280ft,${gpsurl})
+ same = n,AELSub(pngnpbx-abc-sa,144 W Colfax Ave,Denver,CO,80202)
+ same = n,AELSub(pngnpbx-abc-ai,Picnic Shelter 4)                                     
+ same = n,AELSub(pngnpbx-abc-remote,3035557729,static)
+ same = n,Goto(friends)
+
+; Park Gazebo for Software Engineers
+ same = n(x1110),NoOp()                                                     
+ same = n(x1104),NoOp()
+ same = n(x1113),NoOp()
+ same = n(x1114),NoOp()
+ same = n,AELSub(pngnpbx-abc-gps,39.739,-104.990,5280ft,${gpsurl})
+ same = n,AELSub(pngnpbx-abc-sa,144 W Colfax Ave,Denver,CO,80202)
+ same = n,AELSub(pngnpbx-abc-ai,Gazebo)                                     
+ same = n,AELSub(pngnpbx-abc-remote,3035557729,static)
+ same = n,Goto(friends)
+
+; Directors and all others sit together in the Ampitheater
+ same = n(x1103),NoOp()
+ same = n(x1106),NoOp()
+ same = n(x1108),NoOp()
+ same = n,AELSub(pngnpbx-abc-gps,39.739,-104.990,5280ft,${gpsurl})
+ same = n,AELSub(pngnpbx-abc-sa,144 W Colfax Ave,Denver,CO,80202)
+ same = n,AELSub(pngnpbx-abc-ai,Ampitheater)                                     
+ same = n,AELSub(pngnpbx-abc-remote,3035557729,static)
+ same = n,Goto(friends)
+
+; Remote office location in the Mountains for Sales
+ same = n(x1105),NoOp()
+ same = n(x1109),NoOp()
+ same = n(x1112),NoOp()
+ same = n,AELSub(pngnpbx-abc-gps,39.588,-105.644,4350m,${gpsurl})           ; Set Geolocation SIP header to URL and GPS co-ordinates #2.
+ same = n,AELSub(pngnpbx-abc-sa,Mount Evans Ridge,Idaho Springs,CO,80452)   ; Street Address, city name, state abbreviation, zip Code
+ same = n,AELSub(pngnpbx-abc-ai,Floor 42)                                   ; Additional Information. SA + AI = Dispatchable Location
+ same = n,AELSub(pngnpbx-abc-remote,7205557729,static)                      ; Originate out the trunk(s) using a different call-back number as the Caller ID number.
+ same = n,Goto(friends)
+
+ same = n(friends),NoOp()
+ same = n,Log(VERBOSE,Remote dial started. Now adding friends to call.)     ; Most critical is the remote call.
+ same = n,AELSub(pngnpbx-abc-friend,1,PJSIP/1113)                           ; Bridge in friend.
+ same = n,AELSub(pngnpbx-abc-friend,2,PJSIP/1111)                           ; Bridge in another friend.
+ same = n,AELSub(pngnpbx-abc-friend,3,PJSIP/1109)                           ; Bridge in yet another friend. (Up to 20 total participants by default.)
+ same = n,AELSub(pngnpbx-abc-howdy-yall)                                    ; Enter the conference. No more dial plan processing occurs for caller.
+
+;
+; Example #3: Dynamic call back numbers for phones without DIDs
+; -------------------------------------------------------------
+; * Needs two contexts.
+; * Adds nine Dynamic Call Back numbers.
+; * Adds local call back option with 922*EXTENSION
+; * Requires call backs be registered before first use
+;   by dialing 123*2221*NUMBER
+
+[from-external-custom-abc-example-3]
+
+exten = 3035551111,1,AELSub(pngnpbx-abc-reentry,1,${EXTEN},${abclo})    ; Place the dynamic call back DIDs here, one per line (copy/paste/edit.)
+exten = 3035552222,1,AELSub(pngnpbx-abc-reentry,2,${EXTEN},${abclo})    ; Do not change anything except for the phone numbers and position number.
+exten = 3035553333,1,AELSub(pngnpbx-abc-reentry,3,${EXTEN},${abclo})    ; You should not provision these DIDs anywhere else in your PBX.
+exten = 3035554444,1,AELSub(pngnpbx-abc-reentry,4,${EXTEN},${abclo})    ; This is particularly useful for waiting area phones without call back numbers.
+exten = 3035555555,1,AELSub(pngnpbx-abc-reentry,5,${EXTEN},${abclo})    ; The abclo variable is for loading new call backs into internal AstDB.
+exten = 3035556666,1,AELSub(pngnpbx-abc-reentry,6,${EXTEN},${abclo})
+exten = 3035557777,1,AELSub(pngnpbx-abc-reentry,7,${EXTEN},${abclo})
+exten = 3035558888,1,AELSub(pngnpbx-abc-reentry,8,${EXTEN},${abclo})
+exten = 3035559999,1,AELSub(pngnpbx-abc-reentry,9,${EXTEN},${abclo})
+
+[from-internal-custom-abc-example-3]
+
+exten = 922,1,NoOp()
+ same = n,NoOp(placeholder)
+ same = n,Log(VERBOSE,Always Be Conferencing - PenguinPBX.com)  ; Please copy and change as you wish!
+ same = n,Set(ABCTO=933)                                        ; CHANGE ME! Remapping of the dial to another number (if any.)
+ same = n,Set(path=PJSIP/${ABCTO}@#YOUR-TRUNK#)                 ; CHANGE ME! Endpoint section defined in your PJSIP configuration.
+ same = n,Set(defaultcallback=3035550000)                       ; CHANGE ME! Default call back number used if dynamic allocation fails.
+ same = n,Set(friend=PJSIP/1113)                                ; CHANGE ME! The local PJSIP endpoint to bridge into the call.
+ same = n,Set(abctypename=abctest)                              ; CHANGE ME! Use abctest as the conf type name.
+ same = n,Set(ringtime=120)                                     ; MAYBE CHANGE ME! Rings remote end / path for 2 minutes.
+ same = n,AELSub(pngnpbx-abc-simple,${abctypename})             ; Simple setup. (Either "abc-simple", "abc-init" or "abc-tincan" must be first.)
+ same = n,AELSub(pngnpbx-abc-path,1,${ringtime},${path})        ; Set the first (and only) call path to use on call to remote end.
+ same = n,AELSub(pngnpbx-abc-remote,${defaultcallback},dynamic) ; Originate out the path/trunk using a dynamic call-back number as the Caller ID number.
+ same = n,AELSub(pngnpbx-abc-friend,1,${friend})                ; Bridge in the other attendee automatically.
+ same = n,AELSub(pngnpbx-abc-howdy-yall)                        ; Enter the conference. No more dial plan processing occurs for caller.
+
+exten = _922*XXXX,1,NoOp(get back to conf locally)              ; Useful if a friend falls off the wagon. They can get back on the bridge themselves.
+exten = _922*XXXX/1113,n,NoOp()                                 ; Check if they are your friend. Based on caller ID number.
+exten = _922*XXXX/1107,s,NoOp()                                 ; Didn't try to automatically bridge this friend but let them join later manually.
+exten = _922*XXXX/1111,s,NoOp()                                 ; Didn't try to automatically bridge this friend but let them join later manually.
+exten = _922*XXXX/1103,s,NoOp()                                 ; Didn't try to automatically bridge this friend but let them join later manually.
+exten = _922*XXXX/1106,s,NoOp()                                 ; Didn't try to automatically bridge this friend but let them join later manually.
+exten = _922*XXXX,s,Hangup()                                    ; No non-friends allowed.
+exten = _922*XXXX,n,NoOp()
+ same = n,Set(abcconfid=${FILTER(a-zA-Z0-9,${EXTEN:4})})
+ same = n,Goto(pngnpbx-abc-bridge,${abcconfid},1)
+
+exten = _123*2221*NXXNXXXXXX,1,NoOp(number loading)             ; Dial this each time you change dynamic call back DIDs.
+ same = n,Set(abclo=yes)                                        ; Or you could manually insert entries into AstDB.
+ same = n,Set(did=${CUT(EXTEN,*,2)})                            ; But doing it this way on the phone is probably easier.
+ same = n,Goto(from-external-custom-abc-example-3,${did},1)     ; Also it re-uses the other context so no double-typing of DIDs!
+
+;
+; Example #4: Tin Can Mode
+; ------------------------
+; * Using "Tin Can" mode for Dial to remote instead of Originate.
+; * Please see "Tin Can Mode WARNING" near the top of this file.
+
+[from-internal-custom-abc-example-4]
+
+exten = 922,1,NoOp()
+ same = n,NoOp(placeholder)
+ same = n,Log(VERBOSE,Always Be Conferencing - PenguinPBX.com)  ; Please copy and change as you wish!
+ same = n,Set(ABCTO=933)                                        ; CHANGE ME! Remapping of the dial to another number (if any.)
+ same = n,Set(ABCTRUNK=#YOUR-TRUNK#)                            ; CHANGE ME! Remapping of the dial to another number (if any.)
+ same = n,Set(ABCPATH=PJSIP/${ABCTO}@${ABCTRUNK})               ; CHANGE ME! Endpoint section defined in your PJSIP configuration.
+ same = n,Set(ABCCALLBACK=3035550000)                           ; CHANGE ME! Default call back number used if dynamic allocation fails.
+ same = n,Set(ABCFRIEND=PJSIP/1113)                             ; CHANGE ME! The local PJSIP endpoint to bridge into the call.
+ same = n,Set(ABCTYPENAME=abctest)                              ; CHANGE ME! Use abctest as the conf type name.
+ same = n,Set(ABCRINGTIME=120)                                  ; MAYBE CHANGE ME! Rings remote end / path for 2 minutes.
+ same = n,AELSub(pngnpbx-abc-tincan,${ABCTYPENAME})             ; Tin Can mode. Uses Dial instead of Originate to the remote.
+ same = n,AELSub(pngnpbx-abc-path,1,${ABCRINGTIME},${ABCPATH})  ; Set the first (and only) call path to use on call to remote end.
+ same = n,AELSub(pngnpbx-abc-remote,${ABCCALLBACK},static)      ; In Tin Can mode, this spawns Originate to a ChanSpy dummy not the remote end.
+ same = n,AELSub(pngnpbx-abc-friend,1,${ABCFRIEND})             ; Bridge in the other attendee automatically.
+ same = n,AELSub(pngnpbx-abc-howdy-yall)                        ; In Tin Can mode, this dials the remote and then enters the conference after they answer.
+                                                                ; IT DOES NOT IMMEDIATELY PUT THE CALLER INTO THE CONFERENCE BRIDGE.
+                                                                ; IT USES A STANDARD DIAL() TO DIRECTLY ROUTE TO THE REMOTE END.
+                                                                ; IF THE CALLER HANGS UP BEFORE THE REMOTE END ANSWERS IT WILL DROP ON BOTH SIDES.
+
+; End of Examples sub-section
+
+
+
+Frequently Asked Questions
+==========================
+
+Question:
+
+    What are the conference menu options ?
+
+Answer:
+
+    * YOU ARE HERE! Speaks GPS co-ordinates of the caller into the conference.
+    0 Operator (TODO: Play back all of the menu options. Just to your phone.)
+    1 (empty) (TODO: Might be option to pass DTMF through and/or mute/unmute)
+    2 "A"dditional information (eg. Room Number) is spoken into the conference.
+    3 "D"ecrease listening volume - only on your phone.
+    4 "I"ncrease listening volume - only on your phone.
+    5 "L"ocal extension number is spoken into the conference.
+    6 "N"umber to call back and reach the caller is spoken into the conference.
+    7 "S"treet address and additional information of caller is spoken into the conference.
+    8 (empty) (TODO: Might be option for friends to add in a new "T"elephone number.)
+    9 "W"hat the? Redial the remote destination phone number into the conference.
+    # Halts any automated message playbacks (may have to press it twice sometimes.)
+
+Question:
+
+    Why do I hear ring back tone until the friend(s) pick up and answer ?
+
+Answer:
+
+    You'll need to add a new line to indications.conf for each tone zone
+    you offer to your users in order to produce a 'silent' ringer.
+
+    (...scroll down to find the section...)
+    [us]
+    description = United States / North America
+    silent = 0/15000
+    (...the rest of the tones...)
+
+    ...but to avoid a restart, for testing, on the Asterisk CLI, you can do:
+
+        localhost*CLI> indication add us silent 0/15000
+
+Question:
+
+    Why use 922 as the example extension that users will dial to reach 933 ?
+
+Answer:
+
+    It is currently only used for the police in Tonga. And it might help
+    users distinguish between competing providers of different brands of
+    operator services at the remote end. Any 9XX number in the following
+    ranges should be good to test with in most countries:
+
+        901-910
+        914-918
+        920-932
+        934-976
+        978-989
+
+    Please consult your local numbering plan rules before making changes.
+
+Question:
+
+    Wait, could ABC be used to help open up free market competition with
+    existing emergency operator service monopolies in given geographic areas,
+    without pre-loading private personal GPS address information for every
+    telecommuter in the USA up in to massive centralized databases of
+    dispatchable location directions to the nation's critical infrastructure ?
+
+Answer:
+
+    Maybe but that is currently beyond the scope of this technical document.
+
+
+
+Thank you for reading!
+
+This long descriptive AEL comment ends right here at the splat slash. */
+
+
+/****************************************************************************
+ * BEGIN PUBLIC SECTION                                                     *
+ * This section contains macros and contexts that should be entered from    *
+ * somewhere outside of this file.                                          *
+ ****************************************************************************/
+
+/* PUBLIC */
+/* Either "simple", "tincan" or "init" macro needs to be entered first,
+ * from somewhere outside of this file, in order to activate the conf room. */
+macro pngnpbx-abc-simple(type_) {
+    &pngnpbx-abc-init(${type_},,,,,);
+    return;
+}
+
+/* PUBLIC */
+/* SMH but IANAL */
+macro pngnpbx-abc-tincan(type_) {
+    &pngnpbx-abc-init(${type_},,,,,tincan);
+    return;
+}
+
+/* PUBLIC */
+/* The "init" macro (re)sets up several things for the conference room. */
+macro pngnpbx-abc-init(type_,record_,conftimeout_,abcid_,announce_,tincan_) {
+    Set(LOCAL(startstamp)=${STRFTIME(,UTC,%F %H:%M:%S.%3q)} UTC);
+    local cnftmt=;
+    DumpChan(5);
+    if( ${LEN(${type_})} > 0 ) {
+        Set(pngnpbx_abc_type=${type_});
+    } else {
+        Set(pngnpbx_abc_type=default);
+    }
+    Set(CHANNEL(accountcode)=${pngnpbx_abc_type});
+    if( ${LEN(${abcid_})} > 0 ) {
+        Set(pngnpbx_abc_id=${FILTER(a-zA-Z0-9,${abcid_})});
+    } else {
+        // This default only works if each phone has a unique caller ID number.
+        // Otherwise, you'll need to specify your own conference ID number.
+        // (But if your extensions have matching numbers... please just stop that.)
+        Set(pngnpbx_abc_id=${FILTER(a-zA-Z0-9,${CALLERID(num)})});
+    }
+    Set(cnftmt=${FILTER(0-9,${conftimeout_})});
+    if( ${LEN(${cnftmt})} == 0 ) {
+        Set(cnftmt=14400);
+    }
+    // TODO: Check if the conference is already/still running.
+    DBdeltree(pngnpbx/abc/cb/${pngnpbx_abc_id});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/init)=${startstamp});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/ogchan)=${CHANNEL(name)});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/type)=${pngnpbx_abc_type});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/cidnum)=${CALLERID(num)});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/cidname)=${CALLERID(name)});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dnid)=${CALLERID(DNID)});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/conftimeout)=${cnftmt});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/ttsactive)=0);
+    if( "x${TOLOWER(${record_})}" == "xrecord" ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/record)=yes);
+    } else {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/record)=no);
+    }
+    if( "x${TOLOWER(${announce_})}" == "xannounce" ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/announce)=yes);
+    } else {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/announce)=no);
+    }
+    if( "x${TOLOWER(${tincan_})}" == "xtincan" ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)=yes);
+    } else {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)=no);
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "remote" macro should be entered once per conference.
+ * It is (arguably) the most important destination and probably what the user dialed. */
+macro pngnpbx-abc-remote(cidnum_,usedynamiccid_) {
+    local gotdyno=no;
+    local maybedid=${cidnum_};
+    local mytincan=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)};
+
+    if( "x${TOLOWER(${usedynamiccid_})}" == "xdynamic" ) {
+        // TODO: Use LOCK function with Dynamic CID-DID.
+        for( i=1; ${i} <= 9; i=${i} + 1 ) {
+            Set(maybedid=${DB(pngnpbx/abc/dynodid/callback/${i})});
+            if( ${LEN(${maybedid})} > 0 ) {
+                Set(LOCAL(og)=${DB(pngnpbx/abc/dynodid/ogcaller/${maybedid})});
+                Set(LOCAL(lastcall)=${DB(pngnpbx/abc/dynodid/lastcall/${maybedid})});
+                Set(LOCAL(difftime)=$[${EPOCH}-${lastcall}]);
+                if( ${LEN(${og})} == 0 || ${difftime} >= 3600 ) {
+                    Set(LOCAL(ognow)=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/cidnum)});
+                    Set(DB(pngnpbx/abc/dynodid/lastcall/${maybedid})=${EPOCH});
+                    Set(DB(pngnpbx/abc/dynodid/ogcaller/${maybedid})=${ognow});
+                    Set(gotdyno=yes);
+                    break;
+                }
+            }
+        }
+        if( "x${gotdyno}" == "xno" ) {
+            // Dynamic CID-DID allocation failed.
+            maybedid=${cidnum_};
+        }
+    }
+
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/outboundcidnum)=${maybedid});
+    if( "x${mytincan}" == "xyes" ) {
+        Originate(Local/${pngnpbx_abc_id}@pngnpbx-abc-bridge,exten,pngnpbx-abc-spy,${pngnpbx_abc_id},1,1);
+    } else {
+        Originate(Local/${pngnpbx_abc_id}@pngnpbx-abc-bridge,exten,pngnpbx-abc-dial,${pngnpbx_abc_id}-0ABC,1,1);
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "friend" macro can be entered multiple times, once per each additional participant. */
+macro pngnpbx-abc-friend(position_,dialstr_) {
+    local myexten=${CUT(dialstr_,/,2)};
+    local mycidnum=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/cidnum)};
+    // TODO: more loop prevention using GROUP function (need to test bad forwarding scenarios)
+    if( "x${myexten}" != "x${mycidnum}" ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/friend/${position_}/dialstr)=${dialstr_});
+        Originate(Local/${pngnpbx_abc_id}@pngnpbx-abc-bridge,exten,pngnpbx-abc-dial,${pngnpbx_abc_id}-${position_},1,1);
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "paths" macro supports multiple dial strings to try and
+ * reach the far end, in a failover manner, in case some routes are down. */
+macro pngnpbx-abc-path(position_,timeout_,dialstr_) {
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/outpath/${position_}/dialstr)=${dialstr_});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/outpath/${position_}/timeout)=${timeout_});
+    return;
+}
+
+/* PUBLIC */
+/* The "vmail" macro is optional. Sends a voicemail about the call.
+ * First 30 seconds of the call is attached as the voicemail. */
+macro pngnpbx-abc-vmail(boxes_) {
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/vmailboxes)=${boxes_});
+    Originate(Local/${pngnpbx_abc_id}@pngnpbx-abc-troll,exten,pngnpbx-abc-vmdrop,${pngnpbx_abc_id},1,1);
+    return;
+}
+
+/* PUBLIC */
+/* The "gps" macro is optional; if used it should be entered immediately after "init". */
+macro pngnpbx-abc-gps(lat_,lon_,elv_,url_) {
+    &pngnpbx-abc-polo(${pngnpbx_abc_id});
+    if( ${LEN(${lat_})} == 0 ) {
+        Set(lat_=${abcdlat});
+    }
+    if( ${LEN(${lon_})} == 0 ) {
+        Set(lon_=${abcdlon});
+    }
+    if( ${LEN(${elv_})} == 0 ) {
+        Set(elv_=${abcdelv});
+    }
+    if( ${LEN(${lat_})} > 0 ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/gps/lat)=${lat_});
+        if( ${LEN(${lon_})} > 0 ) {
+            Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/gps/lon)=${lon_});
+        }
+    }
+    if( ${LEN(${elv_})} > 0 ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/gps/elv)=${elv_});
+    }
+    if( ${LEN(${url_})} > 0 ) {
+        Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/gps/url)=${url_});
+    }
+    return;
+} 
+
+/* PUBLIC */
+/* The "sa" macro is to add the street address. */
+macro pngnpbx-abc-sa(street_,city_,state_,zip_) {
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dloc/street)=${street_});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dloc/city)=${city_});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dloc/state)=${state_});
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dloc/zip)=${zip_});
+    return;
+}
+
+/* PUBLIC */
+/* The "ai" macro is to add additional information to the street address. */
+macro pngnpbx-abc-ai(info_) {
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/dloc/ainfo)=${info_});
+    return;
+}
+
+/* PUBLIC */
+/* The "reentry" macro is for dynamic callback number mapping. */
+macro pngnpbx-abc-reentry(position_,didcid_,abcloadingonly_) {
+    Set(dynodid=${FILTER(a-zA-Z0-9,${didcid_})});
+    Set(ogcaller=${DB(pngnpbx/abc/dynodid/ogcaller/${dynodid})});
+    Set(currdid=${DB(pngnpbx/abc/dynodid/callback/${position_})});
+    if( ${LEN(${currdid})} == 0 || "x${currdid}" != "x${dynodid}" ) {
+        Set(DB(pngnpbx/abc/dynodid/callback/${position_})=${dynodid});
+    }
+    if( "x${abcloadingonly_}" == "xyes" ) {
+        &pngnpbx-abc-tunes();
+        SayDigits(${didcid_});
+        Playback(position);
+        SayNumber(${position_});
+    } else {
+        if( ${LEN(${ogcaller})} > 0 ) {
+            // TODO: make this work with chan_SIP too
+            Dial(${PJSIP_DIAL_CONTACTS(${ogcaller})},300,giI);
+            Hangup();
+        } else {
+            Congestion(10); // TODO: Do more than congestion.
+        }
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "key-read" gets first 16 characters from the key file. */
+macro pngnpbx-abc-key-read(fpath_) {
+    local fn="pngnpbx-abc-key.txt";
+    //local fp="/etc/asterisk/keys";
+    local fp="/var/lib/asterisk/keys";
+    if( ${LEN(${fpath_})} > 0 ) {
+        Set(fp=${fpath_});
+    }
+    Set(abckey=${FILE(${fp}/${fn},0,16)});
+    if( ${LEN(${abckey})} != 16 ) {
+        Set(abckey=);
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "key-gen" macro generates a new key and saves it in to a file. */
+macro pngnpbx-abc-key-gen(fpath_) {
+    local fn="pngnpbx-abc-key.txt";
+    //local fp="/etc/asterisk/keys";
+    local fp="/var/lib/asterisk/keys";
+    local k=;
+    local m=;
+    local n=;
+    local o=;
+    local p=;
+    if( ${LEN(${fpath_})} > 0 ) {
+        Set(fp=${fpath_});
+    }
+    Set(k=${FILE(${fp}/${fn},0,16)});
+    // only overwrite existing file if it is too short of a key value
+    if( "x${k}" == "x" || ${LEN(${k})} < 16 ) {
+        m=${MD5(THANK YOU ${RAND()} PAUL FOR DEFENDING THE 6TH AMENDMENT. GO ${RAND()} ${EPOCH}!)};
+        n=${LEN(${m})}/2;
+        o=${RAND(0,${n})};
+        p=${m:${o}:16};
+        Set(FILE(${fp}/${fn})=${p});
+    }
+    return;
+}
+
+/* PUBLIC */
+/* The "marco" macro is used to update phone GPS position. */
+macro pngnpbx-abc-marco(ext_,lat_,lon_,elv_) {
+    &pngnpbx-abc-key-read("");
+    if( ${LEN(${abckey})} == 0 ) {
+        // Must have a key to encrypt the data with.
+        // Key must be 16 characters. Or less.
+        // TODO: generate one automatically (hmmmm)
+        return;
+    }
+    if( ${LEN(${ext_})} == 0 ) {
+        // Must have an extension number.
+        // TODO: lift it from the caller ID number
+        return;
+    }
+    if( ${LEN(${lat_})} == 0 || ${LEN(${lon_})} == 0 ) {
+        // Must have co-ordinates.
+        // TODO: maybe use defaults of the PBX 
+        return;
+    }
+    if( ${LEN(${elv_})} == 0 ) {
+        // Assume a mile high. :)
+        Set(elv_=5280ft);
+    }
+    Set(LOCAL(egps)=${AES_ENCRYPT(${abckey},${lat_} ${lon_} ${elv_})});
+    Set(DB(pngnpbx/abc/egps/${ext_})=${egps});
+    return;
+}
+
+/* PUBLIC */
+/* The "polo" macro is used to retrieve current phone GPS position
+ * as it is stored in the internal Asterisk DB. They must have called
+ * out to "marco" sometime before "polo". */
+macro pngnpbx-abc-polo(ext_) {
+    &pngnpbx-abc-key-read("");
+    if( ${LEN(${abckey})} == 0 ) {
+        // Must have a key to decrypt the data with.
+        return;
+    }
+    if( ${LEN(${ext_})} == 0 ) {
+        // Must have an extension number.
+        return;
+    }
+    Set(LOCAL(egps)=${DB(pngnpbx/abc/egps/${ext_})});
+    Set(dgps=${AES_DECRYPT(${abckey},${egps})});
+    Set(abcdlat=${CUT(dgps, ,1)});
+    Set(abcdlon=${CUT(dgps, ,2)});
+    Set(abcdelv=${CUT(dgps, ,3)});
+    return;
+}
+
+/* PUBLIC */
+/* The "ivr-diy-gps" context is for users to self update their phone location.
+ * Interactive Voice Response - Do It Yourself - Global Positioning System
+ * TODO: maybe generate an email whenever a user updates their location.
+ * TODO: error checking on all values
+ * TODO: lock down who can enter this IVR. */
+context pngnpbx-abc-ivr-diy-gps {
+    s => {
+        &pngnpbx-abc-account(${CALLERID(num)});
+        &pngnpbx-abc-tunes();
+    lat:
+        Background(telephone-in-your-pocket);
+        Background(please-enter-the);
+        Background(letters/l&letters/a&letters/t);
+        Background(then-press-pound);
+        Background(for&letters/dot&press-star);
+        WaitExten(2);
+        Background(letters/l&letters/a&letters/t);
+        WaitExten(10);
+        Hangup();
+    lon:
+        Background(that-tickles);
+        Background(now);
+        Background(letters/l&letters/o&letters/n);
+        WaitExten(2);
+        Background(letters/l&letters/o&letters/n);
+        WaitExten(10);
+        Hangup();
+    elv:
+        Background(what-are-you-wearing);
+        Background(now);
+        Background(your&altitude&feet);
+        WaitExten(2);
+        Background(altitude&feet);
+        WaitExten(10);
+        Hangup();
+    }
+    _X#! => NoOp();
+    _XX#! => NoOp();
+    _XXX#! => NoOp();
+    _XXXX#! => NoOp();
+    _XXXXX#! => NoOp();
+    _X*XXX#! => NoOp();
+    _XX*XXX#! => NoOp();
+    _XXX*XXX#! => NoOp();
+    _X.# => {
+        NoOp();
+        if( "${ulat}" == "" ) {
+            Set(ulat0=${EXTEN:0:-1});
+            Set(ulat=${STRREPLACE(ulat0,*,.)});
+            goto s,lon;
+        }
+        if( "${ulon}" == "" ) {
+            Set(ulon0=${EXTEN:0:-1});
+            Set(ulon=${STRREPLACE(ulon0,*,.)});
+            goto s,elv;
+        }
+        if( "${uelv}" == "" ) {
+            Set(uelv0=${EXTEN:0:-1});
+            Set(uelv=${STRREPLACE(uelv0,*,.)}ft);
+            &pngnpbx-abc-marco(${abcid},${ulat},${ulon},${uelv});
+            goto confirmation,1;
+        }
+    }
+    confirmation => {
+        &pngnpbx-abc-polo(${abcid});
+        Playback(auth-thankyou);
+        Playback(confirm-number-is);
+        // TODO maybe merge with other GPS TTS
+        SayNumber(${CUT(abcdlat,.,1)});
+        Playback(letters/dot);
+        SayDigits(${CUT(abcdlat,.,2)});
+        Playback(by);
+        SayNumber(${CUT(abcdlon,.,1)});
+        Playback(letters/dot);
+        SayDigits(${CUT(abcdlon,.,2)});
+        Playback(altitude);
+        SayNumber(${FILTER(0-9,${abcdelv})});
+        SayAlpha(${FILTER(a-zA-Z,${abcdelv})});
+    }
+}; // end context pngnpbx-abc-ivr-diy-gps
+
+/* PUBLIC */
+/* The "demo" context allows trying out the system more quickly. */
+context pngnpbx-abc-demo {
+    123*222 => goto pngnpbx-abc-ivr-diy-gps,s,1; // programs dynamic GPS
+    123*2221* => {
+        &pngnpbx-abc-account(${CALLERID(num)});
+        &pngnpbx-abc-tunes();
+        goto pngnpbx-abc-ivr-diy-gps,confirmation,1;
+    }
+    123*2229* => {
+        &pngnpbx-abc-account(${CALLERID(num)});
+        &pngnpbx-abc-tunes();
+        &pngnpbx-abc-key-gen(""); // must gen key before dynamic GPS
+        Playback(auth-thankyou);
+    }
+    _123*2224*.*.*. => {
+        Log(VERBOSE,Always Be Conferencing - PenguinPBX.com);
+        Set(gpsurl=https://abc.penguinpbx.com/loc/);
+        Set(tech=${CHANNEL(channeltype)});
+        Set(path=${tech}/${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,3)})});
+        Set(friend1=${tech}/${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,4)})});
+        Set(friend2=${tech}/${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,5)})});
+        Set(callback=7203242729);
+        Set(abctypename=abctest);
+        Set(ringtime=120);
+        &pngnpbx-abc-simple(${abctypename});
+        &pngnpbx-abc-path(1,${ringtime},${path});
+        &pngnpbx-abc-gps(39.588,-105.644,4350m,${gpsurl});
+        &pngnpbx-abc-sa(Mount Evans Ridge,Idaho Springs,CO,80452);
+        &pngnpbx-abc-ai(Floor 42);
+        &pngnpbx-abc-remote(${callback},static);
+        &pngnpbx-abc-friend(1,${friend1});
+        &pngnpbx-abc-friend(2,${friend2});
+        &pngnpbx-abc-howdy-yall();
+    }
+    _123*2226*.*.*. => {
+        Log(VERBOSE,Always Be Conferencing - PenguinPBX.com);
+        Set(gpsurl=https://abc.penguinpbx.com/loc/);
+        Set(tech=${CHANNEL(channeltype)});
+        Set(path=${tech}/${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,3)})});
+        Set(friend=${tech}/${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,4)})});
+        Set(vmtroll=${FILTER(a-zA-Z0-9,${CUT(EXTEN,*,5)})}@default);
+        Set(callback=7203242729);
+        Set(abctypename=abctest);
+        Set(ringtime=120);
+        &pngnpbx-abc-simple(${abctypename});
+        &pngnpbx-abc-path(1,${ringtime},${path});
+        &pngnpbx-abc-gps(,,,${gpsurl}); // dynamic GPS
+        &pngnpbx-abc-sa(144 W Colfax Ave,Denver,CO,80202);
+        &pngnpbx-abc-ai(Picnic Shelter 4);
+        &pngnpbx-abc-remote(${callback},static);
+        &pngnpbx-abc-friend(1,${friend});
+        &pngnpbx-abc-vmail(${vmtroll}); // voicemail notification
+        &pngnpbx-abc-howdy-yall();
+    }
+}; // end context pngnpbx-abc-demo
+
+
+/****************************************************************************
+ * BEGIN PRIVATE SECTION                                                    *
+ * The rest of the file contains internal macros and contexts that should   *
+ * (usually) only be referenced from elsewhere within this particular file. *
+ ****************************************************************************/
+
+/* The "geohdrs" macro is only utilized in tandem with "gps" macro. */
+macro pngnpbx-abc-geohdrs(abcid_) {
+    // TODO: check if this is an outgoing PJSIP channel
+    Set(LOCAL(lat)=${DB(pngnpbx/abc/cb/${abcid_}/gps/lat)});
+    Set(LOCAL(lon)=${DB(pngnpbx/abc/cb/${abcid_}/gps/lon)});
+    Set(LOCAL(elv)=${DB(pngnpbx/abc/cb/${abcid_}/gps/elv)});
+    Set(LOCAL(url)=${DB(pngnpbx/abc/cb/${abcid_}/gps/url)});
+    Set(PJSIP_HEADER(add,Geolocation)=<${url}?lat=${lat}&lon=${lon}>);
+    Set(PJSIP_HEADER(add,Geolocation-Routing)=no);
+    return;
+}
+
+/* The "cbo-user" macro defines only 'user' items for the conference. */
+macro pngnpbx-abc-cbo-user(cnftmt_) {
+    // TODO: play beeperr sound when the OG caller leaves the bridge
+    CONFBRIDGE(user,admin)=no;
+    CONFBRIDGE(user,announce_join_leave)=no;
+    CONFBRIDGE(user,announce_only_user)=no;
+    CONFBRIDGE(user,announce_user_count)=no;
+    CONFBRIDGE(user,dsp_drop_silence)=yes;
+    CONFBRIDGE(user,end_marked)=no;
+    CONFBRIDGE(user,jitterbuffer)=yes;
+    CONFBRIDGE(user,music_on_hold_when_empty)=no;
+    CONFBRIDGE(user,quiet)=yes;
+    CONFBRIDGE(user,startmuted)=no;
+    CONFBRIDGE(user,timeout)=${cnftmt_};
+    CONFBRIDGE(user,wait_marked)=no;
+    CONFBRIDGE(user,dtmf_passthrough)=yes;
+    return;
+}
+
+/* The "cbo" macro defines human member items for the conference. */
+macro pngnpbx-abc-cbo(abcid_) {
+    local cnftmt=;
+    local dorecord=;
+    local abctype=;
+    local certversion="${VERSION()}";
+    Set(LOCAL(saymenu)="silence/1"); // TODO: add prompts for menu
+    Set(cnftmt=${DB(pngnpbx/abc/cb/${abcid_}/conftimeout)});
+    Set(TIMEOUT(absolute)=${cnftmt});
+    Set(dorecord=${DB(pngnpbx/abc/cb/${abcid_}/record)});
+    if( "x${dorecord}" == "xyes" ) {
+        Set(abctype=${DB(pngnpbx/abc/cb/${abcid_}/type)});
+        // TODO: file bug report because certified version number issue
+        if( ${VERSION(ASTERISK_VERSION_NUM)} >= 160000 
+         || "${CUT(certversion,/,2)}" == "16.3-cert1" ) {
+            MixMonitor(${abctype}-${abcid_}-${UNIQUEID}.wav);
+        } else {
+            Monitor(wav,${abctype}-${abcid_}-${UNIQUEID});
+        }
+    }
+    &pngnpbx-abc-cbo-user(${cnftmt});
+    CONFBRIDGE(bridge,max_members)=20;
+    // Dynamic menu change requires first choosing template.
+    // TODO: file a bug report because no template = crash
+    CONFBRIDGE(menu,template)=default_menu;
+    //CONFBRIDGE(menu,clear)=hmm;
+    Set(CONFBRIDGE(menu,*)=dialplan_exec(pngnpbx-abc-hola-gps,${abcid_},1)); // HERE!
+    Set(CONFBRIDGE(menu,0)=playback_and_continue(${saymenu})); // Operator
+    Set(CONFBRIDGE(menu,1)=no_op); // (blank)
+    Set(CONFBRIDGE(menu,2)=dialplan_exec(pngnpbx-abc-hola-ainfo,${abcid_},1)); // A
+    Set(CONFBRIDGE(menu,3)=decrease_listening_volume); // D
+    Set(CONFBRIDGE(menu,4)=increase_listening_volume); // I
+    Set(CONFBRIDGE(menu,5)=dialplan_exec(pngnpbx-abc-hola-exten,${abcid_},1)); // L
+    Set(CONFBRIDGE(menu,6)=dialplan_exec(pngnpbx-abc-hola-cbnum,${abcid_},1)); // N
+    Set(CONFBRIDGE(menu,7)=dialplan_exec(pngnpbx-abc-hola-dloc,${abcid_},1)); // S
+    Set(CONFBRIDGE(menu,8)=no_op); // TUV
+    Set(CONFBRIDGE(menu,9)=dialplan_exec(pngnpbx-abc-redial,${abcid_},1)); // W
+    return;
+}
+
+/* The "howdy-yall" macro is the final needed step for connecting the caller. */
+macro pngnpbx-abc-howdy-yall() {
+    local mytincan=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)};
+    CONNECTEDLINE(num,i) = ${CALLERID(DNID)};
+    CONNECTEDLINE(name,i) = "${TOUPPER(${pngnpbx_abc_type})} ConfCall";
+    CONNECTEDLINE(pres) = allowed;
+    &pngnpbx-abc-cbo(${pngnpbx_abc_id});
+    Set(nowstamp=${STRFTIME(,UTC,%F %H:%M:%S.%3q)} UTC);
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/howdy)=${nowstamp});
+    if( "x${mytincan}" == "xyes" ) {
+        goto pngnpbx-abc-dial,${pngnpbx_abc_id}-0ABC,1;
+    } else {
+        ConfBridge(pngnpbx-abc-${pngnpbx_abc_id});
+    }
+    return;
+}
+
+/* The "account" macro is called internally from several places. */
+macro pngnpbx-abc-account(x_) {
+    Answer();
+    Set(abcid=${FILTER(a-zA-Z0-9,${x_})});
+    Set(abctype=${DB(pngnpbx/abc/cb/${abcid}/type)});
+    Set(CHANNEL(accountcode)=${abctype});
+    return;
+}
+
+/* The "tunes" macro plays a little ditty. Fly birdy, fly! */
+macro pngnpbx-abc-tunes() {
+    Answer();
+    Playtones(432/120,0/20,485/120,0/20,514/120); // A4, B4, C4
+    Wait(.420);
+    return;
+}
+
+/* The "tts-status" macro helps keep multiple sounds from playing at the same time. */
+macro pngnpbx-abc-tts-status(abcid_,status_) {
+    Set(ttsact=${DB(pngnpbx/abc/cb/${abcid_}/ttsactive)});
+    if( "x${ttsact}" == "x1" && "x${status_}" == "x1" ) {
+        Hangup();
+    }
+    Set(DB(pngnpbx/abc/cb/${abcid_}/ttsactive)=${status_});
+    return;
+}
+
+/* The "tts-gps" context Speaks out the GPS co-ordinates of the OG caller. */
+context pngnpbx-abc-tts-gps {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        Set(lat=${DB(pngnpbx/abc/cb/${abcid}/gps/lat)});
+        Set(lon=${DB(pngnpbx/abc/cb/${abcid}/gps/lon)});
+        Set(elv=${DB(pngnpbx/abc/cb/${abcid}/gps/elv)});
+        &pngnpbx-abc-tunes();
+        if( ${LEN(${lat})} > 0 && ${LEN(${lon})} > 0 ) {
+            SayAlpha(gps);
+            SayNumber(${CUT(lat,.,1)});
+            Background(letters/dot);
+            SayDigits(${CUT(lat,.,2)});
+            Background(by);
+            SayNumber(${CUT(lon,.,1)});
+            Background(letters/dot);
+            SayDigits(${CUT(lon,.,2)});
+        }
+        if( ${LEN(${elv})} > 0 ) {
+            Background(altitude);
+            SayNumber(${FILTER(0-9,${elv})});
+            SayAlpha(${FILTER(a-zA-Z,${elv})});
+        }
+    }
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "tts-dloc" context speaks out the dispatchable location of the OG caller. */
+context pngnpbx-abc-tts-dloc {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        Set(street=${DB(pngnpbx/abc/cb/${abcid}/dloc/street)});
+        Set(city=${DB(pngnpbx/abc/cb/${abcid}/dloc/city)});
+        Set(state=${DB(pngnpbx/abc/cb/${abcid}/dloc/state)});
+        Set(zip=${DB(pngnpbx/abc/cb/${abcid}/dloc/zip)});
+        Set(ainfo=${DB(pngnpbx/abc/cb/${abcid}/dloc/ainfo)});
+        &pngnpbx-abc-tunes();
+        if( ${LEN(${street})} == 0
+         || ${LEN(${city})} == 0 
+         || ${LEN(${state})} == 0 
+         || ${LEN(${zip})} == 0 ) {
+            Hangup();
+        }
+        Background(zip-code);
+        SayAlpha(${zip});
+        Background(address);
+        SayAlpha(${street});
+        WaitExten(1);
+        SayAlpha(${city});
+        WaitExten(0.5);
+        SayAlpha(${state});
+        if( ${LEN(${ainfo})} == 0 ) {
+            Hangup();
+        }
+        WaitExten(0.25);
+        Background(added&information);
+        SayAlpha(${ainfo});
+    }
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "tts-ainfo" context speaks out the additional address information of the OG caller. */
+context pngnpbx-abc-tts-ainfo {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        Set(ainfo=${DB(pngnpbx/abc/cb/${abcid}/dloc/ainfo)});
+        &pngnpbx-abc-tunes();
+        if( ${LEN(${ainfo})} == 0 ) {
+            Hangup();
+        }
+        Background(added&information);
+        SayAlpha(${ainfo});
+    } 
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "tts-exten" context speaks out the extension number of the OG caller. */
+context pngnpbx-abc-tts-exten {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        Set(cidnum=${DB(pngnpbx/abc/cb/${abcid}/cidnum)});
+        &pngnpbx-abc-tunes();
+        if( ${LEN(${cidnum})} == 0 ) {
+            Hangup();
+        }
+        Background(extension);
+        SayDigits(${cidnum});
+    } 
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "tts-cbnum" context speaks out the call back number of the OG caller. */
+context pngnpbx-abc-tts-cbnum {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        Set(cbnum=${DB(pngnpbx/abc/cb/${abcid}/outboundcidnum)});
+        &pngnpbx-abc-tunes();
+        if( ${LEN(${cbnum})} == 0 ) {
+            Hangup();
+        }
+        Background(call&from);
+        SayDigits(${cbnum});
+    } 
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "tts-genie" context speaks out response from a remote smart process. */
+context pngnpbx-abc-tts-genie {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-tts-status(${abcid},1);
+        Set(SAY_DTMF_INTERRUPT=true);
+        // TODO: link to some artificial intelligence that helps out verbally on the call
+    } 
+    # => &pngnpbx-abc-tts-status(${abcid},0);
+    h => &pngnpbx-abc-tts-status(${abcid},0);
+}
+
+/* The "hola-" contexts spools calls into the conference for Text-To-Speech. */
+context pngnpbx-abc-hola-gps {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-gps,${abcid},1,1);
+    }
+}
+
+context pngnpbx-abc-hola-dloc {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-dloc,${abcid},1,1);
+    }
+}
+
+context pngnpbx-abc-hola-ainfo {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-ainfo,${abcid},1,1);
+    }
+}
+
+context pngnpbx-abc-hola-exten {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-exten,${abcid},1,1);
+    }
+}
+
+context pngnpbx-abc-hola-cbnum {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-cbnum,${abcid},1,1);
+    }
+}
+
+/* Anchor point for the "hola" shouts into the conference. */
+context pngnpbx-abc-hola {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Set(cnftmt=${DB(pngnpbx/abc/cb/${abcid}/conftimeout)});
+        &pngnpbx-abc-cbo-user(${cnftmt});
+        ConfBridge(pngnpbx-abc-${abcid});
+    }
+}
+
+/* The "bridge" context puts spooled calls in the conference. */
+context pngnpbx-abc-bridge {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-cbo(${abcid});
+        ConfBridge(pngnpbx-abc-${abcid});
+    }
+}
+
+/* The "troll" context also puts spooled calls in the conference.
+ * BUT it mutes them. */
+context pngnpbx-abc-troll {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        &pngnpbx-abc-cbo(${abcid});
+        CONFBRIDGE(user,startmuted)=yes;
+        ConfBridge(pngnpbx-abc-${abcid});
+    }
+}
+
+/* The "vmdrop" context saves snippet of call into voicemail. */
+context pngnpbx-abc-vmdrop {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Set(TIMEOUT(absolute)=30);
+        Set(boxes=${DB(pngnpbx/abc/cb/${abcid}/vmailboxes)});
+        Set(outboundcidnum=${DB(pngnpbx/abc/cb/${abcid}/outboundcidnum)});
+        Set(abccidnum=${DB(pngnpbx/abc/cb/${abcid}/cidnum)});
+        Set(abccidname=${DB(pngnpbx/abc/cb/${abcid}/cidname)});
+        Set(abcdnid=${DB(pngnpbx/abc/cb/${abcid}/dnid)});
+        Set(cnftmt=${DB(pngnpbx/abc/cb/${abcid}/conftimeout)});
+        Set(lat=${DB(pngnpbx/abc/cb/${abcid}/gps/lat)});
+        Set(lon=${DB(pngnpbx/abc/cb/${abcid}/gps/lon)});
+        Set(elv=${DB(pngnpbx/abc/cb/${abcid}/gps/elv)});
+        Set(CALLERID(num)=${abccidnum});
+        Set(CALLERID(name)=${TOUPPER(${abctype})}:${abccidname} dialed ${abcdnid} as ${outboundcidnum} GPS ${lat} ${lon} ${elv});
+        VoiceMail(${boxes},sUP);
+    }
+}
+
+/* The "redial" context is entered from conf menu option 9 to re-attempt
+ * the outbound remote call, as it was dialed by the OG caller. */
+context pngnpbx-abc-redial {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Originate(Local/${abcid}@pngnpbx-abc-bridge,exten,pngnpbx-abc-dial,${abcid}-0ABC,1,1);
+    }
+}
+
+/* The "answered-" contexts are for after the dial picks up on remote end. */
+context pngnpbx-abc-answered-common {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})}); // where the callee enters
+        Set(doannounce=${DB(pngnpbx/abc/cb/${abcid}/announce)});
+        if( "x${doannounce}" == "xyes" ) {
+            // automatic announcement of GPS data to the remote end on answer
+            Originate(Local/${abcid}@pngnpbx-abc-hola,exten,pngnpbx-abc-tts-gps,${abcid},1,1);
+        }
+        &pngnpbx-abc-cbo(${abcid});
+        ConfBridge(pngnpbx-abc-${abcid});
+    }
+}
+
+/* The "answered-originate" context should *not* be used in Tin Can Mode.
+ * It should be entered only from a Dial option 'G' which is why it looks weird.
+ * Do not be fooled by the Hangup in the first line when Originating. KEEP IT THERE. */
+context pngnpbx-abc-answered-originate {
+    _[a-zA-Z0-9]. => {
+        Hangup(); // caller enters here but their leg is not needed with Originate
+        goto pngnpbx-abc-answered-common,${EXTEN},1; // where the callee enters
+    }
+}
+
+/* The "answered-tincan" context should only be used when in Tin Can Mode.
+ * It should be entered only from a Dial option 'G' which is why it looks weird.
+ * Do not be fooled by the goto in the first line when Dialing. KEEP IT THERE. */
+context pngnpbx-abc-answered-tincan {
+    _[a-zA-Z0-9]. => {
+        goto pngnpbx-abc-answered-common,${EXTEN},1;            // where the caller enters
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});    // where the callee enters
+        Set(spychan=${DB(pngnpbx/abc/cb/${abcid}/spychan)});    // find the spy
+        ChannelRedirect(${spychan},${CONTEXT},h,1);             // kill the spy
+        goto pngnpbx-abc-answered-common,${EXTEN},1;            // go into conference
+    }
+    h => Hangup();                                              // the spy cemetery
+}
+
+/* The "answered-friend" context is executed when the friend answers the call.
+ * Friends are only ever called with Originate.
+ * Do not be fooled by the Hangup in the first line when Originating. KEEP IT THERE. */
+context pngnpbx-abc-answered-friend {
+    _[a-zA-Z0-9]. => {
+        Hangup(); // caller enters here but their leg is not needed with Originate
+        &pngnpbx-abc-tunes(); // where the callee enters
+        goto pngnpbx-abc-answered-common,${EXTEN},1;
+    }
+}
+
+/* The "afterword-tincan" context is the place to send the remote caller to
+ * when the caller hangs up *before* the remote end answers. */
+context pngnpbx-abc-afterword-tincan {
+    _[a-zA-Z0-9]. => {
+        // TODO: Hold the call up better!
+        NoOp();
+    }
+}
+
+/* The "spy" context should only be used in Tin Can mode. */
+context pngnpbx-abc-spy {
+    _[a-zA-Z0-9]. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${EXTEN})});
+        Set(chan=${DB(pngnpbx/abc/cb/${abcid}/ogchan)});
+        Set(DB(pngnpbx/abc/cb/${abcid}/spychan)=${CHANNEL(name)});
+        ChanSpy(${chan},EqsSuw);
+    }
+}
+
+/* The "dial" context actually makes the phones ring. */
+context pngnpbx-abc-dial {
+    _[a-zA-Z0-9].-. => {
+        &pngnpbx-abc-account(${FILTER(a-zA-Z0-9,${CUT(EXTEN,-,1)})});
+        Set(position=${FILTER(0-9,${CUT(EXTEN,-,2)})});
+        Set(usetincan=${DB(pngnpbx/abc/cb/${abcid}/tincan)});
+        Set(tofriend=${DB(pngnpbx/abc/cb/${abcid}/friend/${position}/dialstr)});
+        Set(outboundcidnum=${DB(pngnpbx/abc/cb/${abcid}/outboundcidnum)});
+        Set(abctype=${DB(pngnpbx/abc/cb/${abcid}/type)});
+        Set(abccidnum=${DB(pngnpbx/abc/cb/${abcid}/cidnum)});
+        Set(abccidname=${DB(pngnpbx/abc/cb/${abcid}/cidname)});
+        Set(abcdnid=${DB(pngnpbx/abc/cb/${abcid}/dnid)});
+        Set(cnftmt=${DB(pngnpbx/abc/cb/${abcid}/conftimeout)});
+        Set(lat=${DB(pngnpbx/abc/cb/${abcid}/gps/lat)});
+        Set(lon=${DB(pngnpbx/abc/cb/${abcid}/gps/lon)});
+        Set(elv=${DB(pngnpbx/abc/cb/${abcid}/gps/elv)});
+        Set(CHANNEL(accountcode)=${abctype});
+        Set(TIMEOUT(absolute)=${cnftmt});
+        Set(abcdialopts=iI); // no forwards or connected line updates
+        if( ${LEN(${tofriend})} > 0 ) {
+            Set(CALLERID(num)=${abccidnum});
+            Set(CALLERID(name)=${TOUPPER(${abctype})}:${abccidname} dialed ${abcdnid} as ${outboundcidnum} GPS ${lat} ${lon} ${elv});
+            // The silent ringer should be defined in indications.conf.
+            // See more info at the top of this file.
+            Set(abcdialopts=${abcdialopts}r(silent));
+            Set(abcdialopts=${abcdialopts}G(pngnpbx-abc-answered-friend^${abcid}^1));
+            // TODO: Add Alert-Info headers for auto-answer.
+            // Try to dial out a couple of times, one minute each try...
+            Dial(${tofriend},60,${abcdialopts});
+            if( "${DIALSTATUS}" != "ANSWERED" ) {
+                Wait(1);
+                Proceeding();
+                Wait(1);
+                Dial(${tofriend},60,${abcdialopts});
+            }
+        } else {
+            Set(CALLERID(num)=${outboundcidnum});
+            if( ${LEN(${lat})} == 0 || ${LEN(${lon})} == 0 ) {
+                Set(CALLERID(name)=${abccidname});
+            } else {
+                // Really cool if/when the provider lets this get to the far end (some do!)
+                Set(CALLERID(name)=GPS ${lat} ${lon} ${elv}:${abccidname});
+                // No biggee if no URL at least we modded/overloaded the caller ID name.
+                Set(gpsurl=${DB(pngnpbx/abc/cb/${abcid}/gps/url)});
+                if( ${LEN(${gpsurl})} > 0 ) {
+                    // Macros in AEL are Gosubs with snake-like extension names.
+                    // (Maybe pronounced 'sssssss'.)
+                    // TODO: Adjust Contact header for setting name and call back number (on some providers.)
+                    Set(abcdialopts=${abcdialopts}b(pngnpbx-abc-geohdrs^~~s~~^1(${abcid})));
+                    if( "x${usetincan}" == "xyes" ) {
+                        Set(abcdialopts=${abcdialopts}F(pngnpbx-abc-afterword-tincan^${abcid}^1));
+                        Set(abcdialopts=${abcdialopts}G(pngnpbx-abc-answered-tincan^${abcid}^1));
+                    } else {
+                        Set(abcdialopts=${abcdialopts}G(pngnpbx-abc-answered-originate^${abcid}^1));
+                    }
+                }
+            }
+            for( i=1; ${i} <= 3; i=${i} + 1 ) {
+                Set(opdialstr=${DB(pngnpbx/abc/cb/${abcid}/outpath/${i}/dialstr)});
+                Set(optimeout=${DB(pngnpbx/abc/cb/${abcid}/outpath/${i}/timeout)});
+                if( ${LEN(${opdialstr})} == 0 ) {
+                    break;
+                }
+                if( ${LEN(${optimeout})} == 0 ) {
+                    Set(optimeout=300);
+                }
+                // hooray a Dial
+                Dial(${opdialstr},${optimeout},${abcdialopts});
+                if( "${DIALSTATUS}" == "ANSWERED" ) {
+                    break;
+                } 
+                Wait(1);
+                Proceeding();
+                Wait(1);
+            }
+        }
+    }
+}; // end context pngnpbx-abc-dial
+
+
+
+/*
+
+FOOTNOTES
+=========
+
+Thank you to all of the helpful contributors on the ASTERISK and FreePBX lists and forums.
+
+ASTERISK, FreePBX and DAHDI are registered trademarks of Sangoma.
+
+Penguin PBX Solutions is not affiliated with Sangoma.
+
+*/
