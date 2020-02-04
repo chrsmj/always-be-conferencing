@@ -744,95 +744,20 @@ macro pngnpbx-abc-reentry(position_,didcid_,abcloadingonly_) {
 }
 
 /* PUBLIC */
-/* The "key-read" gets first 16 characters from the key file. */
-macro pngnpbx-abc-key-read(fpath_) {
-    local fn="pngnpbx-abc-key.txt";
-    //local fp="/etc/asterisk/keys";
-    local fp="/var/lib/asterisk/keys";
-    if( ${LEN(${fpath_})} > 0 ) {
-        Set(fp=${fpath_});
+/* The "howdy-yall" macro is the final needed step for connecting the caller. */
+macro pngnpbx-abc-howdy-yall() {
+    local mytincan=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)};
+    CONNECTEDLINE(num,i) = ${CALLERID(DNID)};
+    CONNECTEDLINE(name,i) = "${TOUPPER(${pngnpbx_abc_type})} ConfCall";
+    CONNECTEDLINE(pres) = allowed;
+    &pngnpbx-abc-cbo(${pngnpbx_abc_id});
+    Set(nowstamp=${STRFTIME(,UTC,%F %H:%M:%S.%3q)} UTC);
+    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/howdy)=${nowstamp});
+    if( "x${mytincan}" == "xyes" ) {
+        goto pngnpbx-abc-dial,${pngnpbx_abc_id}-0ABC,1;
+    } else {
+        ConfBridge(pngnpbx-abc-${pngnpbx_abc_id});
     }
-    Set(abckey=${FILE(${fp}/${fn},0,16)});
-    if( ${LEN(${abckey})} != 16 ) {
-        Set(abckey=);
-    }
-    return;
-}
-
-/* PUBLIC */
-/* The "key-gen" macro generates a new key and saves it in to a file. */
-macro pngnpbx-abc-key-gen(fpath_) {
-    local fn="pngnpbx-abc-key.txt";
-    //local fp="/etc/asterisk/keys";
-    local fp="/var/lib/asterisk/keys";
-    local k=;
-    local m=;
-    local n=;
-    local o=;
-    local p=;
-    if( ${LEN(${fpath_})} > 0 ) {
-        Set(fp=${fpath_});
-    }
-    Set(k=${FILE(${fp}/${fn},0,16)});
-    // only overwrite existing file if it is too short of a key value
-    if( "x${k}" == "x" || ${LEN(${k})} < 16 ) {
-        m=${MD5(THANK YOU ${RAND()} PAUL FOR DEFENDING THE 6TH AMENDMENT. GO ${RAND()} ${EPOCH}!)};
-        n=${LEN(${m})}/2;
-        o=${RAND(0,${n})};
-        p=${m:${o}:16};
-        Set(FILE(${fp}/${fn})=${p});
-    }
-    return;
-}
-
-/* PUBLIC */
-/* The "marco" macro is used to update phone GPS position. */
-macro pngnpbx-abc-marco(ext_,lat_,lon_,elv_) {
-    &pngnpbx-abc-key-read("");
-    if( ${LEN(${abckey})} == 0 ) {
-        // Must have a key to encrypt the data with.
-        // Key must be 16 characters. Or less.
-        // TODO: generate one automatically (hmmmm)
-        return;
-    }
-    if( ${LEN(${ext_})} == 0 ) {
-        // Must have an extension number.
-        // TODO: lift it from the caller ID number
-        return;
-    }
-    if( ${LEN(${lat_})} == 0 || ${LEN(${lon_})} == 0 ) {
-        // Must have co-ordinates.
-        // TODO: maybe use defaults of the PBX 
-        return;
-    }
-    if( ${LEN(${elv_})} == 0 ) {
-        // Assume a mile high. :)
-        Set(elv_=5280ft);
-    }
-    Set(LOCAL(egps)=${AES_ENCRYPT(${abckey},${lat_} ${lon_} ${elv_})});
-    Set(DB(pngnpbx/abc/egps/${ext_})=${egps});
-    return;
-}
-
-/* PUBLIC */
-/* The "polo" macro is used to retrieve current phone GPS position
- * as it is stored in the internal Asterisk DB. They must have called
- * out to "marco" sometime before "polo". */
-macro pngnpbx-abc-polo(ext_) {
-    &pngnpbx-abc-key-read("");
-    if( ${LEN(${abckey})} == 0 ) {
-        // Must have a key to decrypt the data with.
-        return;
-    }
-    if( ${LEN(${ext_})} == 0 ) {
-        // Must have an extension number.
-        return;
-    }
-    Set(LOCAL(egps)=${DB(pngnpbx/abc/egps/${ext_})});
-    Set(dgps=${AES_DECRYPT(${abckey},${egps})});
-    Set(abcdlat=${CUT(dgps, ,1)});
-    Set(abcdlon=${CUT(dgps, ,2)});
-    Set(abcdelv=${CUT(dgps, ,3)});
     return;
 }
 
@@ -982,6 +907,95 @@ context pngnpbx-abc-demo {
  * (usually) only be referenced from elsewhere within this particular file. *
  ****************************************************************************/
 
+/* The "key-read" gets first 16 characters from the key file. */
+macro pngnpbx-abc-key-read(fpath_) {
+    local fn="pngnpbx-abc-key.txt";
+    //local fp="/etc/asterisk/keys";
+    local fp="/var/lib/asterisk/keys";
+    if( ${LEN(${fpath_})} > 0 ) {
+        Set(fp=${fpath_});
+    }
+    Set(abckey=${FILE(${fp}/${fn},0,16)});
+    if( ${LEN(${abckey})} != 16 ) {
+        Set(abckey=);
+    }
+    return;
+}
+
+/* The "key-gen" macro generates a new key and saves it in to a file. */
+macro pngnpbx-abc-key-gen(fpath_) {
+    local fn="pngnpbx-abc-key.txt";
+    //local fp="/etc/asterisk/keys";
+    local fp="/var/lib/asterisk/keys";
+    local k=;
+    local m=;
+    local n=;
+    local o=;
+    local p=;
+    if( ${LEN(${fpath_})} > 0 ) {
+        Set(fp=${fpath_});
+    }
+    Set(k=${FILE(${fp}/${fn},0,16)});
+    // only overwrite existing file if it is too short of a key value
+    if( "x${k}" == "x" || ${LEN(${k})} < 16 ) {
+        m=${MD5(THANK YOU ${RAND()} PAUL FOR DEFENDING THE 6TH AMENDMENT. GO ${RAND()} ${EPOCH}!)};
+        n=${LEN(${m})}/2;
+        o=${RAND(0,${n})};
+        p=${m:${o}:16};
+        Set(FILE(${fp}/${fn})=${p});
+    }
+    return;
+}
+
+/* The "marco" macro is used to update phone GPS position. */
+macro pngnpbx-abc-marco(ext_,lat_,lon_,elv_) {
+    &pngnpbx-abc-key-read("");
+    if( ${LEN(${abckey})} == 0 ) {
+        // Must have a key to encrypt the data with.
+        // Key must be 16 characters. Or less.
+        // TODO: generate one automatically (hmmmm)
+        return;
+    }
+    if( ${LEN(${ext_})} == 0 ) {
+        // Must have an extension number.
+        // TODO: lift it from the caller ID number
+        return;
+    }
+    if( ${LEN(${lat_})} == 0 || ${LEN(${lon_})} == 0 ) {
+        // Must have co-ordinates.
+        // TODO: maybe use defaults of the PBX 
+        return;
+    }
+    if( ${LEN(${elv_})} == 0 ) {
+        // Assume a mile high. :)
+        Set(elv_=5280ft);
+    }
+    Set(LOCAL(egps)=${AES_ENCRYPT(${abckey},${lat_} ${lon_} ${elv_})});
+    Set(DB(pngnpbx/abc/egps/${ext_})=${egps});
+    return;
+}
+
+/* The "polo" macro is used to retrieve current phone GPS position
+ * as it is stored in the internal Asterisk DB. They must have called
+ * out to "marco" sometime before "polo". */
+macro pngnpbx-abc-polo(ext_) {
+    &pngnpbx-abc-key-read("");
+    if( ${LEN(${abckey})} == 0 ) {
+        // Must have a key to decrypt the data with.
+        return;
+    }
+    if( ${LEN(${ext_})} == 0 ) {
+        // Must have an extension number.
+        return;
+    }
+    Set(LOCAL(egps)=${DB(pngnpbx/abc/egps/${ext_})});
+    Set(dgps=${AES_DECRYPT(${abckey},${egps})});
+    Set(abcdlat=${CUT(dgps, ,1)});
+    Set(abcdlon=${CUT(dgps, ,2)});
+    Set(abcdelv=${CUT(dgps, ,3)});
+    return;
+}
+
 /* The "geohdrs" macro is only utilized in tandem with "gps" macro. */
 macro pngnpbx-abc-geohdrs(abcid_) {
     // TODO: check if this is an outgoing PJSIP channel
@@ -1053,22 +1067,6 @@ macro pngnpbx-abc-cbo(abcid_) {
     return;
 }
 
-/* The "howdy-yall" macro is the final needed step for connecting the caller. */
-macro pngnpbx-abc-howdy-yall() {
-    local mytincan=${DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/tincan)};
-    CONNECTEDLINE(num,i) = ${CALLERID(DNID)};
-    CONNECTEDLINE(name,i) = "${TOUPPER(${pngnpbx_abc_type})} ConfCall";
-    CONNECTEDLINE(pres) = allowed;
-    &pngnpbx-abc-cbo(${pngnpbx_abc_id});
-    Set(nowstamp=${STRFTIME(,UTC,%F %H:%M:%S.%3q)} UTC);
-    Set(DB(pngnpbx/abc/cb/${pngnpbx_abc_id}/howdy)=${nowstamp});
-    if( "x${mytincan}" == "xyes" ) {
-        goto pngnpbx-abc-dial,${pngnpbx_abc_id}-0ABC,1;
-    } else {
-        ConfBridge(pngnpbx-abc-${pngnpbx_abc_id});
-    }
-    return;
-}
 
 /* The "account" macro is called internally from several places. */
 macro pngnpbx-abc-account(x_) {
