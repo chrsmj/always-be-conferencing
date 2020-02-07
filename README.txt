@@ -5,6 +5,7 @@ Automatically join friends to your Conference Bridge before they even answer the
 ;
 ; Example #5: More advanced FreePBX integration
 ; ---------------------------------------------
+; * Copy this context into your /etc/asterisk/extensions_custom.conf file.
 ; * Integrates with FreePBX per-device emergency_cid numbers.
 ; * Just fill in the #XYZ# variables once for your entire system.
 ; * Then, create a new Custom Destination in FreePBX to point to:
