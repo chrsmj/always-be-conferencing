@@ -20,6 +20,7 @@ Automatically join friends to your Conference Bridge before they even answer the
 exten => s,1,NoOp()
 exten => s,n,NoOp(placeholder)
 exten => s,n,Log(VERBOSE,Always Be Conferencing - PenguinPBX.com)
+exten => s,n,Set(cidnum=${FILTER(0-9A-Za-z,${CALLERID(num)})})
 exten => s,n,Set(callback=${DB(DEVICE/${cidnum}/emergency_cid)})
 exten => s,n,Set(ABCTO=${CALLERID(DNID)})
 exten => s,n,Set(path1=SIP/${ABCTO}@#SIPTRUNK-1#)
