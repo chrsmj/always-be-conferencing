@@ -634,8 +634,8 @@ exten => s,n,Set(pathringtime=120)
 exten => s,n,AELSub(pngnpbx-abc-tincan,${abctypename})
 exten => s,n,AELSub(pngnpbx-abc-path,1,${pathringtime},${path})
 exten => s,n,AELSub(pngnpbx-abc-remote,${defaultcallback},subnet)
-exten => s,n,AELSub(pngnpbx-abc-troll,1,${pal1},nosy)
-exten => s,n,AELSub(pngnpbx-abc-troll,2,${pal2},)
+exten => s,n,AELSub(pngnpbx-abc-troll,1,${troll1},nosy)
+exten => s,n,AELSub(pngnpbx-abc-troll,2,${troll2},)
 exten => s,n,AELSub(pngnpbx-abc-howdy-yall)
 
 
