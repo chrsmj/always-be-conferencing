@@ -3,7 +3,7 @@ Always Be Conferencing
 Automatically join friends to your Conference Bridge before they even answer the phone
 via AEL-based configuration for Asterisk.
 
-The latest version is v16h released 18 February 2020.
+The latest version is v16k released 20 April 2020.
 Earlier versions are kept for historical reference but are not recommended for new deployments.
 
 Please see full Examples near the top of the AEL file. Here is a sample:
