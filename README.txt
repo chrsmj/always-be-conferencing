@@ -1,13 +1,13 @@
 Always Be Conferencing
 **********************
-Automatically join friends to your Conference Bridge before they even answer the phone
-via AEL-based configuration for Asterisk.
+Automatically join friends to your Conference Bridge before they even answer the phone!
 
-The latest version is v20m released 6 January 2023.
-Earlier versions are kept for historical reference but are not recommended for new deployments.
+Compatible with ASTERISK versions 13+, using AEL-based dial plan configuration file,
+that you can access from your existing extensions.conf dial plan with minimal fuss.
 
-Please see full README, mini-HOWTOs, and Examples near the top of the AEL file.
-Yes, everything is in one file!
+The latest version is v20m released 6 January 2023, tested most on ASTERISK version 20.
+
+Please see the AEL file for full README, mini-HOWTOs, and Examples -- yes, all in one file!
 
 Here are some snippets/highlights:
 
@@ -46,8 +46,6 @@ conferenceminutes=120       ; Maximum length for one conference.
 monthlyminutes=600          ; Allowed cumulative conference minutes for the month.
 vmcontext=default           ; Voicemail context used to authenticate users.
 numberstyle=us              ; Default is 'international' for robo number speech.
-
-
 
 
 
