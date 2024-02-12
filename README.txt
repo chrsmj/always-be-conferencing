@@ -5,7 +5,7 @@ Automatically join friends to your Conference Bridge before they even answer the
 Compatible with ASTERISK versions 13+, using AEL-based dial plan configuration file,
 that you can access from your existing extensions.conf dial plan with minimal fuss.
 
-The latest version is v20m released 6 January 2023, tested most on ASTERISK version 20.
+The latest version is v21n released 12 February 2024, tested most on ASTERISK version 20.
 
 Please see the AEL file for full README, mini-HOWTOs, and Examples -- yes, all in one file!
 
