@@ -24,14 +24,14 @@ new extensions from your desk phone.
 
 1. Start out by test dialing these numbers from your desk phone:
 
-    123*222*0
-    123*222*1
-    123*222*2
-    123*222
-    123#222
-    123222 (that's "123 ABC" on the phone keypad)
-    922
-    933
+        123*222*0
+        123*222*1
+        123*222*2
+        123*222
+        123#222
+        123222 (that's "123 ABC" on the phone keypad)
+        922
+        933
 
    You'll probably hear some sort of error message on most of
    them. This is different for each install. Use your judgement.
@@ -42,30 +42,30 @@ new extensions from your desk phone.
 
 2. SSH into your PBX:
 
-    ssh muhpbx
+        ssh muhpbx
 
 3. Download copy of AEL file you are currently reading from GitHub to your PBX:
 
-    wget https://raw.githubusercontent.com/chrsmj/always-be-conferencing/master/extensions-pngnpbx-abc-v21n.ael
+        wget https://raw.githubusercontent.com/chrsmj/always-be-conferencing/master/extensions-pngnpbx-abc-v21n.ael
 
 4. Copy in the new ABC AEL file:
 
-    sudo cp extensions-pngnpbx-abc-v21n.ael /etc/asterisk/
+        sudo cp extensions-pngnpbx-abc-v21n.ael /etc/asterisk/
 
 5. Check if you already got some other AEL files active in your existing Asterisk install:
 
-    ls -last /etc/asterisk/*.ael*
+        ls -last /etc/asterisk/*.ael*
 
    If you only see this ABC AEL file, then jump ahead to Step 7A.
 
 6. If you see other exisiting AEL files, then check the hashes:
 
-    md5sum /etc/asterisk/extensions*.ael*
+        md5sum /etc/asterisk/extensions*.ael*
 
    The Asterisk sample AEL file "extensions.ael" MD5 hash value
    from versions ~1.8 to 18+ is:
 
-    9e8a0e48880f732345eac9ed889b6115
+        9e8a0e48880f732345eac9ed889b6115
 
    If your hash matches that, great, you've got a default AEL file.
    Proceed to Step 7A.
@@ -88,39 +88,39 @@ new extensions from your desk phone.
 
 8. Choose your integration method with FreePBX -- any or all of the following 8A-8G:
 
-8A. GPS and other geolocation integration
+    8A. GPS and other geolocation integration
 
-    echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-gps' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-gps' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8B. Emergency Outbound Calling - 922 testing - TONGA WARNING: Do not enable this 922 just yet in TONGA and maybe more countries.
+    8B. Emergency Outbound Calling - 922 testing - TONGA WARNING: Do not enable this 922 just yet in TONGA and maybe more countries.
 
-    echo -e '[from-internal-custom]\nexten => 922,1,Goto(pngnpbx-abc-easy-goto-eoc,922,simple)' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\nexten => 922,1,Goto(pngnpbx-abc-easy-goto-eoc,922,simple)' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8C. Emergency Outbound Calling - 933 more testing
+    8C. Emergency Outbound Calling - 933 more testing
 
-    echo -e '[from-internal-custom]\nexten => 933,1,Goto(pngnpbx-abc-easy-goto-eoc,933,tincan)' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\nexten => 933,1,Goto(pngnpbx-abc-easy-goto-eoc,933,tincan)' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8D. Emergency Outbound Calling - parallel notifications - US AND CANADA AND OTHERS WARNING: DO NOT CHANGE 911 ROUTING
-    UNTIL AFTER YOU COMPLETE GOOD TESTS WITH 922 AND 933. ONLY THEN DO YOUR 911 CALL TEST AT OFF-PEAK PSAP HOURS.
-    JUST BE NICE - DO NOT HANG UP ON THE TEST - TELL THEM IT IS A TEST AND CHECK YOUR LOCATION AND CALLER ID INFO!
+    8D. Emergency Outbound Calling - parallel notifications - US AND CANADA AND OTHERS WARNING: DO NOT CHANGE 911 ROUTING
+        UNTIL AFTER YOU COMPLETE GOOD TESTS WITH 922 AND 933. ONLY THEN DO YOUR 911 CALL TEST AT OFF-PEAK PSAP HOURS.
+        JUST BE NICE - DO NOT HANG UP ON THE TEST - TELL THEM IT IS A TEST AND CHECK YOUR LOCATION AND CALLER ID INFO!
 
-    echo -e '[from-internal-custom]\nexten => 911,1,Goto(pngnpbx-abc-easy-goto-eoc,911,parallel)' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\nexten => 911,1,Goto(pngnpbx-abc-easy-goto-eoc,911,parallel)' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8E. Allow full demo integration with FreePBX managed internal phones:
+    8E. Allow full demo integration with FreePBX managed internal phones:
 
-    echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-demo' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-demo' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8F. Allow video door bell demo:
+    8F. Allow video door bell demo:
 
-    echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-doorbell' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-doorbell' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
-8G. Allow Insta Teams Mode:
+    8G. Allow Insta Teams Mode:
 
-    echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-itm' | sudo tee -a /etc/asterisk/extensions_custom.conf
+        echo -e '[from-internal-custom]\ninclude => pngnpbx-abc-easy-include-itm' | sudo tee -a /etc/asterisk/extensions_custom.conf
 
 9. Double-check if permissions and just plain existence of files seems reasonable:
 
-    ls -last /etc/asterisk/extensions*.{conf,ael}*
+        ls -last /etc/asterisk/extensions*.{conf,ael}*
 
 10. Press "Apply Changes" button in FreePBX GUI.
     If you don't see the button, then make a small change elsewhere in the GUI,
@@ -147,4 +147,3 @@ new extensions from your desk phone.
 
 
 Thus ends the mini-HOWTO for integration with FreePBX.
-See further below for several more Examples with FreePBX.
