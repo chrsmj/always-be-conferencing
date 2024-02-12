@@ -46,11 +46,11 @@ new extensions from your desk phone.
 
 3. Download copy of AEL file you are currently reading from GitHub to your PBX:
 
-        wget https://raw.githubusercontent.com/chrsmj/always-be-conferencing/master/extensions-pngnpbx-abc-v21n.ael
+        wget https://raw.githubusercontent.com/chrsmj/always-be-conferencing/master/extensions-pngnpbx-abc-v21n.ael2
 
 4. Copy in the new ABC AEL file:
 
-        sudo cp extensions-pngnpbx-abc-v21n.ael /etc/asterisk/
+        sudo cp extensions-pngnpbx-abc-v21n.ael2 /etc/asterisk/
 
 5. Check if you already got some other AEL files active in your existing Asterisk install:
 
@@ -80,11 +80,11 @@ new extensions from your desk phone.
 
     7A. Overwrite method
 
-        echo '#include "extensions-pngnpbx-abc-v21n.ael"' | sudo tee /etc/asterisk/extensions.ael
+        echo '#include "extensions-pngnpbx-abc-v21n.ael2"' | sudo tee /etc/asterisk/extensions.ael
 
     7B. Append method
 
-        echo '#include "extensions-pngnpbx-abc-v21n.ael"' | sudo tee -a /etc/asterisk/extensions.ael
+        echo '#include "extensions-pngnpbx-abc-v21n.ael2"' | sudo tee -a /etc/asterisk/extensions.ael
 
 8. Choose your integration method with FreePBX -- any or all of the following 8A-8G:
 
