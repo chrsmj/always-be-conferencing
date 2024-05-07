@@ -592,6 +592,53 @@ new extensions from your desk phone.
 
 
 Thus ends the mini-HOWTO for integration with FreePBX.
+See further below for several more Examples with FreePBX.
+
+
+
+PREREQUISITE: The ASTERISK Extension Language (AEL)
+===================================================
+
+This is not your standard dial plan "/etc/asterisk/extensions.conf" file!
+
+ABC is configured in the ASTERISK Extension Language (AEL). AEL syntax is
+converted into standard CONF file format when loaded in to system memory
+by ASTERISK. But you should not need to edit this ABC AEL file very often,
+if ever. It only needs to be *included* into your dialplan.
+
+Please copy this file into your "/etc/asterisk/" directory and set it to
+read-only permission for the user/group your ASTERISK process runs as (usually
+"root" or "asterisk".)
+
+To confirm you have AEL working in your install of ASTERISK, you can run this
+command on the ASTERISK CLI:
+
+    sirius*CLI> core show help ael
+
+...which, if loaded properly, should list "ael reload" and "ael set debug".
+
+Otherwise, if this is your first time using AEL, then you may need to manually
+load the module, or take other steps. This may include rebuilding from source
+code eg. selecting the AEL module when using "make menuconfig".
+
+After confirming AEL is active and working, edit (or make) this file:
+
+    /etc/asterisk/extensions.ael
+
+And add this line (with no spaces at the front):
+
+    #include "extensions-pngnpbx-abc-v21n.ael2"
+
+...then save the file. Now you should be able to load the AEL config and view
+the in-memory dial plan in CONF format:
+
+    sirius*CLI> ael reload
+    sirius*CLI> dialplan show pngnpbx-abc-dial
+
+If that works, and you see a bunch of dial plan looking output, Congratulations!
+You are now able to use ABC from standard dial plan in "extensions.conf" file
+-- or in the "extensions_custom.conf" file if you are using FreePBX.
+
 
 
 Simple Mode vs. Tin Can Mode vs. Insta Teams Mode vs. Parallel Notification Mode
